@@ -51,6 +51,7 @@ class MyBot(BaseAgent):
         field_info = self.get_field_info()
         our_goal_location = self.get_team_goal_pos(field_info)
         ang_to_goal = Vec3(car_velocity).ang_to(Vec3(our_goal_location).flat() - Vec3(car_location))
+        ang_to_ball = Vec3(car_velocity).ang_to(Vec3(ball_location).flat() - Vec3(car_location))
 
         # Ball location prediction
         ball_prediction = self.get_ball_prediction_struct()  # This can predict bounces, etc
@@ -60,7 +61,6 @@ class MyBot(BaseAgent):
         # replays, so check it to avoid errors.
         if ball_in_future is not None:
             ball_future_location = Vec3(ball_in_future.physics.location)
-            self.renderer.draw_line_3d(ball_location, ball_future_location, self.renderer.cyan())
 
         # chase ball if goalside, otherwise head towards goal
         if self.target == self.TARGET_BALL:
@@ -73,27 +73,31 @@ class MyBot(BaseAgent):
         if self.target == self.TARGET_BALL:
             self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: ball', self.renderer.white())
             target_location = ball_location
+            ang_to_target = ang_to_ball
         else: 
             self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: goal', self.renderer.white())
             target_location = Vec3(our_goal_location)
+            ang_to_target = ang_to_goal
 
         # Draw some things to help understand what the bot is thinking
         self.renderer.draw_line_3d(car_location, target_location, self.renderer.white())
         # self.renderer.draw_string_3d(car_location, 1, 1, f'Speed: {car_velocity.length():.1f}', self.renderer.white())
         self.renderer.draw_rect_3d(target_location, 8, 8, True, self.renderer.cyan(), centered=True)
+        self.renderer.draw_line_3d(ball_location, ball_future_location, self.renderer.cyan())
 
         controls = SimpleControllerState()
         controls.steer = steer_toward_target(my_car, target_location)
         controls.throttle = 1.0
         
-        if self.target == self.TARGET_GOAL:
-            # We only want to boost if we're going in the direction of the goal
-            
-            self.renderer.draw_string_2d(0, 30, 2, 2, f'Angle to goal: {round(ang_to_goal, 1)}', self.renderer.white())
-            if ang_to_goal < pi / 4 and car_velocity.length() < 2200: # We don't want to boost if the car is max speed
-                controls.boost = 1
-            if ang_to_goal > 3 / 4 * pi:
-                controls.handbrake = 1
+        # We only want to boost if we're going in the direction of the target
+        self.renderer.draw_string_2d(0, 30, 2, 2, f'Angle to target: {round(ang_to_target, 1)}', self.renderer.white())
+        
+        if ang_to_target < pi / 4 and car_velocity.length() < 2200: # We don't want to boost if the car is max speed
+            controls.boost = 1
+
+        # We drift if we're in the wrong direction
+        if ang_to_target > 3 / 4 * pi:
+            controls.handbrake = 1
 
         return controls
 
