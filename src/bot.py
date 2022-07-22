@@ -16,6 +16,8 @@ class MyBot(BaseAgent):
     TARGET_BALL = 0
     TARGET_GOAL = 1
 
+    target = TARGET_GOAL
+
     def __init__(self, name, team, index):
         super().__init__(name, team, index)
         self.active_sequence: Sequence = None
@@ -47,8 +49,8 @@ class MyBot(BaseAgent):
         car_velocity = Vec3(my_car.physics.velocity)
         ball_location = Vec3(packet.game_ball.physics.location)
         field_info = self.get_field_info()
-        
-        target = self.TARGET_GOAL
+        our_goal_location = self.get_team_goal_pos(field_info)
+        ang_to_goal = Vec3(car_velocity).ang_to(Vec3(our_goal_location).flat() - Vec3(car_location))
 
         # Ball location prediction
         ball_prediction = self.get_ball_prediction_struct()  # This can predict bounces, etc
@@ -61,35 +63,37 @@ class MyBot(BaseAgent):
             self.renderer.draw_line_3d(ball_location, ball_future_location, self.renderer.cyan())
 
         # chase ball if goalside, otherwise head towards goal
-        if self.between_ball_and_goal(ball_future_location, car_location, field_info):
-            target_location = ball_location
-            target = self.TARGET_BALL
-            self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: ball', self.renderer.white())
+        if self.target == self.TARGET_BALL:
+            if not self.between_ball_and_goal(ball_location, car_location, field_info):
+                self.target = self.TARGET_GOAL
         else:
-            goal_pos = self.get_team_goal_pos(field_info)
-            target_location = Vec3(goal_pos.x, goal_pos.y, goal_pos.z)
+            if self.between_ball_and_goal(ball_future_location, car_location, field_info):
+                self.target = self.TARGET_BALL
+
+        if self.target == self.TARGET_BALL:
+            self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: ball', self.renderer.white())
+            target_location = ball_location
+        else: 
             self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: goal', self.renderer.white())
+            target_location = Vec3(our_goal_location)
 
         # Draw some things to help understand what the bot is thinking
         self.renderer.draw_line_3d(car_location, target_location, self.renderer.white())
         # self.renderer.draw_string_3d(car_location, 1, 1, f'Speed: {car_velocity.length():.1f}', self.renderer.white())
         self.renderer.draw_rect_3d(target_location, 8, 8, True, self.renderer.cyan(), centered=True)
 
-        if 750 < car_velocity.length() < 800:
-            # We'll do a front flip if the car is moving at a certain speed.
-            return self.begin_front_flip(packet)
-
         controls = SimpleControllerState()
         controls.steer = steer_toward_target(my_car, target_location)
         controls.throttle = 1.0
         
-        if target == self.TARGET_GOAL:
+        if self.target == self.TARGET_GOAL:
             # We only want to boost if we're going in the direction of the goal
-            ang_to_goal = Vec3(car_velocity).ang_to(Vec3(car_location) - Vec3(goal_pos).flat())
-            ang_to_goal_norm = abs(ang_to_goal - pi / 2)
-            self.renderer.draw_string_2d(0, 30, 2, 2, f'Angle to goal: {round(ang_to_goal_norm, 1)}', self.renderer.white())
-            if ang_to_goal_norm > 3 / 4 * pi / 2 and car_velocity.length() < 2200: # We don't want to boost if the car is max speed
+            
+            self.renderer.draw_string_2d(0, 30, 2, 2, f'Angle to goal: {round(ang_to_goal, 1)}', self.renderer.white())
+            if ang_to_goal < pi / 4 and car_velocity.length() < 2200: # We don't want to boost if the car is max speed
                 controls.boost = 1
+            if ang_to_goal > 3 / 4 * pi:
+                controls.handbrake = 1
 
         return controls
 
