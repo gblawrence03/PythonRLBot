@@ -8,8 +8,13 @@ from util.drive import steer_toward_target
 from util.sequence import Sequence, ControlStep
 from util.vec import Vec3
 
+from math import pi
+
 
 class MyBot(BaseAgent):
+
+    TARGET_BALL = 0
+    TARGET_GOAL = 1
 
     def __init__(self, name, team, index):
         super().__init__(name, team, index)
@@ -42,29 +47,28 @@ class MyBot(BaseAgent):
         car_velocity = Vec3(my_car.physics.velocity)
         ball_location = Vec3(packet.game_ball.physics.location)
         field_info = self.get_field_info()
+        
+        target = self.TARGET_GOAL
+
+        # Ball location prediction
+        ball_prediction = self.get_ball_prediction_struct()  # This can predict bounces, etc
+        ball_in_future = find_slice_at_time(ball_prediction, packet.game_info.seconds_elapsed + 2)
+
+        # ball_in_future might be None if we don't have an adequate ball prediction right now, like during
+        # replays, so check it to avoid errors.
+        if ball_in_future is not None:
+            ball_future_location = Vec3(ball_in_future.physics.location)
+            self.renderer.draw_line_3d(ball_location, ball_future_location, self.renderer.cyan())
 
         # chase ball if goalside, otherwise head towards goal
-        if self.between_ball_and_goal(ball_location, car_location, field_info):
+        if self.between_ball_and_goal(ball_future_location, car_location, field_info):
             target_location = ball_location
+            target = self.TARGET_BALL
             self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: ball', self.renderer.white())
         else:
             goal_pos = self.get_team_goal_pos(field_info)
             target_location = Vec3(goal_pos.x, goal_pos.y, goal_pos.z)
             self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: goal', self.renderer.white())
-
-
-        '''
-        if car_location.dist(ball_location) > 1500:
-            # We're far away from the ball, let's try to lead it a little bit
-            ball_prediction = self.get_ball_prediction_struct()  # This can predict bounces, etc
-            ball_in_future = find_slice_at_time(ball_prediction, packet.game_info.seconds_elapsed + 2)
-
-            # ball_in_future might be None if we don't have an adequate ball prediction right now, like during
-            # replays, so check it to avoid errors.
-            if ball_in_future is not None:
-                target_location = Vec3(ball_in_future.physics.location)
-                self.renderer.draw_line_3d(ball_location, target_location, self.renderer.cyan())
-        '''
 
         # Draw some things to help understand what the bot is thinking
         self.renderer.draw_line_3d(car_location, target_location, self.renderer.white())
@@ -78,13 +82,20 @@ class MyBot(BaseAgent):
         controls = SimpleControllerState()
         controls.steer = steer_toward_target(my_car, target_location)
         controls.throttle = 1.0
-        # You can set more controls if you want, like controls.boost.
+        
+        if target == self.TARGET_GOAL:
+            # We only want to boost if we're going in the direction of the goal
+            ang_to_goal = Vec3(car_velocity).ang_to(Vec3(car_location) - Vec3(goal_pos).flat())
+            ang_to_goal_norm = abs(ang_to_goal - pi / 2)
+            self.renderer.draw_string_2d(0, 30, 2, 2, f'Angle to goal: {round(ang_to_goal_norm, 1)}', self.renderer.white())
+            if ang_to_goal_norm > 3 / 4 * pi / 2 and car_velocity.length() < 2200: # We don't want to boost if the car is max speed
+                controls.boost = 1
 
         return controls
 
     def begin_front_flip(self, packet):
         # Send some quickchat just for fun
-        self.send_quick_chat(team_only=False, quick_chat=QuickChatSelection.Information_IGotIt)
+        # self.send_quick_chat(team_only=False, quick_chat=QuickChatSelection.Information_IGotIt)
 
         # Do a front flip. We will be committed to this for a few seconds and the bot will ignore other
         # logic during that time because we are setting the active_sequence.
