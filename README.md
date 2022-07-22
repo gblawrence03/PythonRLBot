@@ -1,2 +1,2 @@
 # RLBotPythonExample
-Currently behaves identically to the PythonExampleBot
+Drives towards the ball if goalside, goal otherwise. generally not very skilled
