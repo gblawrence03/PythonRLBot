@@ -13,15 +13,16 @@ from math import pi
 
 class MyBot(BaseAgent):
 
-    TARGET_BALL = 0
-    TARGET_GOAL = 1
-
-    target = TARGET_GOAL
+    '''Mode Enums'''
+    MODE_BALLCHASE = 0
+    MODE_RETREAT = 1
+    MODE_AERIAL_RECOVER = 2
 
     def __init__(self, name, team, index):
         super().__init__(name, team, index)
         self.active_sequence: Sequence = None
         self.boost_pad_tracker = BoostPadTracker()
+        self.mode = self.MODE_BALLCHASE
 
     def initialize_agent(self):
         # Set up information about the boost pads now that the game is active and the info is available
@@ -48,42 +49,47 @@ class MyBot(BaseAgent):
         car_location = Vec3(my_car.physics.location)
         car_velocity = Vec3(my_car.physics.velocity)
         ball_location = Vec3(packet.game_ball.physics.location)
+        ball_velocity = Vec3(packet.game_ball.physics.location)
         field_info = self.get_field_info()
         our_goal_location = self.get_team_goal_pos(field_info)
         ang_to_goal = Vec3(car_velocity).ang_to(Vec3(our_goal_location).flat() - Vec3(car_location))
         ang_to_ball = Vec3(car_velocity).ang_to(Vec3(ball_location).flat() - Vec3(car_location))
 
-        # Ball location prediction
-        ball_prediction = self.get_ball_prediction_struct()  # This can predict bounces, etc
-        ball_in_future = find_slice_at_time(ball_prediction, packet.game_info.seconds_elapsed + 2)
+        ball_goalside_location = self.get_future_ball_location(packet, 1.5)
 
-        # ball_in_future might be None if we don't have an adequate ball prediction right now, like during
-        # replays, so check it to avoid errors.
-        if ball_in_future is not None:
-            ball_future_location = Vec3(ball_in_future.physics.location)
-
-        # chase ball if goalside, otherwise head towards goal
-        if self.target == self.TARGET_BALL:
+        # Setting mode
+        # If we're ballchasing, we want to continue ballchasing unless we are no longer goalside
+        #   in which case we begin retreating
+        # If we're retreating, we want to continue retreating until we are goalside
+        #   in which case we begin ballchasing
+        if self.mode == self.MODE_BALLCHASE:
             if not self.between_ball_and_goal(ball_location, car_location, field_info):
-                self.target = self.TARGET_GOAL
-        else:
-            if self.between_ball_and_goal(ball_future_location, car_location, field_info):
-                self.target = self.TARGET_BALL
+                self.mode = self.MODE_RETREAT
+        elif self.mode == self.MODE_RETREAT:
+            if self.between_ball_and_goal(ball_goalside_location, car_location, field_info):
+                self.mode = self.MODE_BALLCHASE
 
-        if self.target == self.TARGET_BALL:
+        if self.mode == self.MODE_BALLCHASE:
             self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: ball', self.renderer.white())
             target_location = ball_location
-            ang_to_target = ang_to_ball
+            dist_to_target = (Vec3(target_location) - Vec3(car_location)).length()
+            est_time_to_target = dist_to_target / car_velocity.length()
+            target_location = self.get_future_ball_location(packet, est_time_to_target)
+            self.renderer.draw_line_3d(ball_location, target_location, self.renderer.cyan())
         else: 
             self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: goal', self.renderer.white())
-            target_location = Vec3(our_goal_location)
-            ang_to_target = ang_to_goal
+            target_location = Vec3(our_goal_location).flat()
+            dist_to_target = (Vec3(target_location) - Vec3(car_location)).length()
+            est_time_to_target = dist_to_target / car_velocity.length()
+            self.renderer.draw_line_3d(ball_location, ball_goalside_location, self.renderer.cyan())
+
+        ang_to_target = Vec3(car_velocity).ang_to(Vec3(target_location).flat() - Vec3(car_location))
 
         # Draw some things to help understand what the bot is thinking
         self.renderer.draw_line_3d(car_location, target_location, self.renderer.white())
-        # self.renderer.draw_string_3d(car_location, 1, 1, f'Speed: {car_velocity.length():.1f}', self.renderer.white())
+        self.renderer.draw_string_3d(target_location, 1, 1, f'Estimated time to target: {est_time_to_target:.1f}', self.renderer.white())
         self.renderer.draw_rect_3d(target_location, 8, 8, True, self.renderer.cyan(), centered=True)
-        self.renderer.draw_line_3d(ball_location, ball_future_location, self.renderer.cyan())
+        
 
         controls = SimpleControllerState()
         controls.steer = steer_toward_target(my_car, target_location)
@@ -91,28 +97,34 @@ class MyBot(BaseAgent):
         brake = False
 
         controls.throttle = 1.0
-        if self.target == self.TARGET_GOAL:
-            if (Vec3(target_location) - Vec3(car_location)).length() < 300 and car_velocity.length > 500:
+        if self.mode == self.MODE_RETREAT:
+            if (Vec3(target_location) - Vec3(car_location)).length() < 800 and car_velocity.length() > 700:
+                self.renderer.draw_string_2d(0, 60, 2, 2, f'Braking!', self.renderer.white())
                 brake = True
                 controls.throttle = -1.0
-            
+
+        if self.mode == self.MODE_BALLCHASE and est_time_to_target < 0.3:
+            if ball_location[2] > 200: 
+                return self.begin_jump(packet)
+            else:
+                return self.begin_front_flip(packet)
         
         # We only want to boost if we're going in the direction of the target
         self.renderer.draw_string_2d(0, 30, 2, 2, f'Angle to target: {round(ang_to_target, 1)}', self.renderer.white())
 
-        if ang_to_target < pi / 4 and car_velocity.length() < 2200 and not brake: # We don't want to boost if the car is max speed
+        if ang_to_target < pi / 5 and car_velocity.length() < 2200 and not brake: # We don't want to boost if the car is max speed
+            # flip if no boost
+            if my_car.boost == 0 and est_time_to_target > 2 and car_velocity.length() > 800:
+                return self.begin_front_flip(packet)
             controls.boost = 1
 
         # We drift if we're in the wrong direction
-        if ang_to_target > 3 / 4 * pi:
+        if ang_to_target > 4 / 5 * pi:
             controls.handbrake = 1
 
         return controls
 
     def begin_front_flip(self, packet):
-        # Send some quickchat just for fun
-        # self.send_quick_chat(team_only=False, quick_chat=QuickChatSelection.Information_IGotIt)
-
         # Do a front flip. We will be committed to this for a few seconds and the bot will ignore other
         # logic during that time because we are setting the active_sequence.
         self.active_sequence = Sequence([
@@ -120,6 +132,15 @@ class MyBot(BaseAgent):
             ControlStep(duration=0.05, controls=SimpleControllerState(jump=False)),
             ControlStep(duration=0.2, controls=SimpleControllerState(jump=True, pitch=-1)),
             ControlStep(duration=0.8, controls=SimpleControllerState()),
+        ])
+
+        # Return the controls associated with the beginning of the sequence so we can start right away.
+        return self.active_sequence.tick(packet)
+
+    def begin_jump(self, packet):
+        self.active_sequence = Sequence([
+            ControlStep(duration=0.1, controls=SimpleControllerState(jump=True)),
+            ControlStep(duration=0.05, controls=SimpleControllerState()),
         ])
 
         # Return the controls associated with the beginning of the sequence so we can start right away.
@@ -136,7 +157,18 @@ class MyBot(BaseAgent):
         for goal in goals:
             if goal.team_num == self.team:
                 return goal.location
-        
+
+    def get_future_ball_location(self, packet, seconds):
+        # Ball location prediction
+        ball_prediction = self.get_ball_prediction_struct()  # This can predict bounces, etc
+        ball_in_future = find_slice_at_time(ball_prediction, packet.game_info.seconds_elapsed + seconds)
+
+        # ball_in_future might be None if we don't have an adequate ball prediction right now, like during
+        # replays, so check it to avoid errors.
+        ball_future_location = Vec3(packet.game_ball.physics.location)
+        if ball_in_future is not None:
+            ball_future_location = Vec3(ball_in_future.physics.location)        
+        return ball_future_location
                 
 
 
