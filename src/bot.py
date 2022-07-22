@@ -87,12 +87,20 @@ class MyBot(BaseAgent):
 
         controls = SimpleControllerState()
         controls.steer = steer_toward_target(my_car, target_location)
+
+        brake = False
+
         controls.throttle = 1.0
+        if self.target == self.TARGET_GOAL:
+            if (Vec3(target_location) - Vec3(car_location)).length() < 300 and car_velocity.length > 500:
+                brake = True
+                controls.throttle = -1.0
+            
         
         # We only want to boost if we're going in the direction of the target
         self.renderer.draw_string_2d(0, 30, 2, 2, f'Angle to target: {round(ang_to_target, 1)}', self.renderer.white())
-        
-        if ang_to_target < pi / 4 and car_velocity.length() < 2200: # We don't want to boost if the car is max speed
+
+        if ang_to_target < pi / 4 and car_velocity.length() < 2200 and not brake: # We don't want to boost if the car is max speed
             controls.boost = 1
 
         # We drift if we're in the wrong direction
