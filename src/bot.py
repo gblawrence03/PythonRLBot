@@ -52,8 +52,8 @@ class MyBot(BaseAgent):
         ball_velocity = Vec3(packet.game_ball.physics.location)
         field_info = self.get_field_info()
         our_goal_location = self.get_team_goal_pos(field_info)
-        ang_to_goal = Vec3(car_velocity).ang_to(Vec3(our_goal_location).flat() - Vec3(car_location))
-        ang_to_ball = Vec3(car_velocity).ang_to(Vec3(ball_location).flat() - Vec3(car_location))
+        ang_to_goal = car_velocity.ang_to(our_goal_location.flat() - car_location)
+        ang_to_ball = car_velocity.ang_to(ball_location.flat() - car_location)
 
         ball_goalside_location = self.get_future_ball_location(packet, 1.5)
 
@@ -66,24 +66,27 @@ class MyBot(BaseAgent):
             if not self.between_ball_and_goal(ball_location, car_location, field_info):
                 self.mode = self.MODE_RETREAT
         elif self.mode == self.MODE_RETREAT:
-            if self.between_ball_and_goal(ball_goalside_location, car_location, field_info):
+            if self.between_ball_and_goal(ball_goalside_location, car_location, field_info):    
                 self.mode = self.MODE_BALLCHASE
+        # force into ballchase mode if in defensive position
+        if (our_goal_location - car_location).length() < 700:
+            self.mode = self.MODE_BALLCHASE
 
         if self.mode == self.MODE_BALLCHASE:
             self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: ball', self.renderer.white())
             target_location = ball_location
-            dist_to_target = (Vec3(target_location) - Vec3(car_location)).length()
+            dist_to_target = (target_location - car_location).length()
             est_time_to_target = dist_to_target / car_velocity.length()
             target_location = self.get_future_ball_location(packet, est_time_to_target)
             self.renderer.draw_line_3d(ball_location, target_location, self.renderer.cyan())
         else: 
             self.renderer.draw_string_2d(0, 0, 2, 2, 'Target: goal', self.renderer.white())
-            target_location = Vec3(our_goal_location).flat()
-            dist_to_target = (Vec3(target_location) - Vec3(car_location)).length()
+            target_location = our_goal_location.flat()
+            dist_to_target = (target_location - car_location).length()
             est_time_to_target = dist_to_target / car_velocity.length()
             self.renderer.draw_line_3d(ball_location, ball_goalside_location, self.renderer.cyan())
 
-        ang_to_target = Vec3(car_velocity).ang_to(Vec3(target_location).flat() - Vec3(car_location))
+        ang_to_target = car_velocity.ang_to(target_location.flat() - car_location)
 
         # Draw some things to help understand what the bot is thinking
         self.renderer.draw_line_3d(car_location, target_location, self.renderer.white())
@@ -98,7 +101,7 @@ class MyBot(BaseAgent):
 
         controls.throttle = 1.0
         if self.mode == self.MODE_RETREAT:
-            if (Vec3(target_location) - Vec3(car_location)).length() < 800 and car_velocity.length() > 700:
+            if (target_location - Vec3(car_location)).length() < 800 and car_velocity.length() > 700:
                 self.renderer.draw_string_2d(0, 60, 2, 2, f'Braking!', self.renderer.white())
                 brake = True
                 controls.throttle = -1.0
@@ -156,7 +159,7 @@ class MyBot(BaseAgent):
         goals = field_info.goals
         for goal in goals:
             if goal.team_num == self.team:
-                return goal.location
+                return Vec3(goal.location)
 
     def get_future_ball_location(self, packet, seconds):
         # Ball location prediction
