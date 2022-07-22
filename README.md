@@ -1,2 +1,2 @@
 # RLBotPythonExample
-Currently behaves identially to the PythonExampleBot
+Currently behaves identically to the PythonExampleBot

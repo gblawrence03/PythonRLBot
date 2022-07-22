@@ -36,11 +36,14 @@ class MyBot(BaseAgent):
             if controls is not None:
                 return controls
 
-        # Gather some information about our car and the ball
+        # Gather some information about our car, the ball, and the field
         my_car = packet.game_cars[self.index]
         car_location = Vec3(my_car.physics.location)
         car_velocity = Vec3(my_car.physics.velocity)
         ball_location = Vec3(packet.game_ball.physics.location)
+        field_info = self.get_field_info()
+        print(self.between_ball_and_goal(ball_location, car_location, field_info))
+        
 
         # By default we will chase the ball, but target_location can be changed later
         target_location = ball_location
@@ -87,3 +90,21 @@ class MyBot(BaseAgent):
 
         # Return the controls associated with the beginning of the sequence so we can start right away.
         return self.active_sequence.tick(packet)
+
+    # Bot should only go towards the ball if the bot is between the ball and our goal. 
+    def between_ball_and_goal(self, ball_location, car_location, field_info):
+        our_goal = self.get_team_goal_pos(field_info)
+        return ball_location.y < car_location.y < our_goal.y
+
+    # Get the location of our team's goal 
+    def get_team_goal_pos(self, field_info):
+        goals = field_info.goals
+        for goal in goals:
+            if goal.team_num == self.team:
+                return goal.location
+        
+                
+
+
+
+        
