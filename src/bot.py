@@ -23,6 +23,7 @@ class MyBot(BaseAgent):
         self.active_sequence: Sequence = None
         self.boost_pad_tracker = BoostPadTracker()
         self.mode = self.MODE_BALLCHASE
+        self.last_flip = -2
 
     def initialize_agent(self):
         # Set up information about the boost pads now that the game is active and the info is available
@@ -118,7 +119,8 @@ class MyBot(BaseAgent):
         if ang_to_target < pi / 5 and car_velocity.length() < 2200 and not brake: # We don't want to boost if the car is max speed
             # flip if no boost
             if my_car.boost == 0 and est_time_to_target > 2 and car_velocity.length() > 800:
-                return self.begin_front_flip(packet)
+                if packet.game_info.seconds_elapsed - self.last_flip > 1.5: # ratelimit flips
+                    return self.begin_front_flip(packet)
             controls.boost = 1
 
         # We drift if we're in the wrong direction
@@ -136,6 +138,8 @@ class MyBot(BaseAgent):
             ControlStep(duration=0.2, controls=SimpleControllerState(jump=True, pitch=-1)),
             ControlStep(duration=0.8, controls=SimpleControllerState()),
         ])
+
+        self.last_flip = packet.game_info.seconds_elapsed
 
         # Return the controls associated with the beginning of the sequence so we can start right away.
         return self.active_sequence.tick(packet)
