@@ -47,7 +47,8 @@ class MyBot(BaseAgent):
         if self.between_ball_and_goal(ball_location, car_location, field_info):
             target_location = ball_location
         else:
-            target_location = self.get_team_goal_pos(field_info)
+            goal_pos = self.get_team_goal_pos(field_info)
+            target_location = Vec3(goal_pos.x, goal_pos.y, goal_pos.z)
 
 
         '''
