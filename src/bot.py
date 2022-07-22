@@ -46,9 +46,11 @@ class MyBot(BaseAgent):
         # chase ball if goalside, otherwise head towards goal
         if self.between_ball_and_goal(ball_location, car_location, field_info):
             target_location = ball_location
+            self.renderer.draw_string_2d(0, 0, 100, 100, 'Target: ball', self.renderer.white())
         else:
             goal_pos = self.get_team_goal_pos(field_info)
             target_location = Vec3(goal_pos.x, goal_pos.y, goal_pos.z)
+            self.renderer.draw_string_2d(0, 0, 100, 100, 'Target: goal', self.renderer.white())
 
 
         '''
@@ -66,7 +68,7 @@ class MyBot(BaseAgent):
 
         # Draw some things to help understand what the bot is thinking
         self.renderer.draw_line_3d(car_location, target_location, self.renderer.white())
-        self.renderer.draw_string_3d(car_location, 1, 1, f'Speed: {car_velocity.length():.1f}', self.renderer.white())
+        # self.renderer.draw_string_3d(car_location, 1, 1, f'Speed: {car_velocity.length():.1f}', self.renderer.white())
         self.renderer.draw_rect_3d(target_location, 8, 8, True, self.renderer.cyan(), centered=True)
 
         if 750 < car_velocity.length() < 800:
