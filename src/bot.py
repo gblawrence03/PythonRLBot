@@ -42,12 +42,15 @@ class MyBot(BaseAgent):
         car_velocity = Vec3(my_car.physics.velocity)
         ball_location = Vec3(packet.game_ball.physics.location)
         field_info = self.get_field_info()
-        print(self.between_ball_and_goal(ball_location, car_location, field_info))
-        
 
-        # By default we will chase the ball, but target_location can be changed later
-        target_location = ball_location
+        # chase ball if goalside, otherwise head towards goal
+        if self.between_ball_and_goal(ball_location, car_location, field_info):
+            target_location = ball_location
+        else:
+            target_location = self.get_team_goal_pos(field_info)
 
+
+        '''
         if car_location.dist(ball_location) > 1500:
             # We're far away from the ball, let's try to lead it a little bit
             ball_prediction = self.get_ball_prediction_struct()  # This can predict bounces, etc
@@ -58,6 +61,7 @@ class MyBot(BaseAgent):
             if ball_in_future is not None:
                 target_location = Vec3(ball_in_future.physics.location)
                 self.renderer.draw_line_3d(ball_location, target_location, self.renderer.cyan())
+        '''
 
         # Draw some things to help understand what the bot is thinking
         self.renderer.draw_line_3d(car_location, target_location, self.renderer.white())
